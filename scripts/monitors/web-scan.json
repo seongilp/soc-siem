@@ -1,0 +1,37 @@
+{
+  "type": "monitor",
+  "name": "웹 스캔 (source_ip별 4xx 10회 이상/5분)",
+  "monitor_type": "bucket_level_monitor",
+  "enabled": true,
+  "schedule": { "period": { "interval": 1, "unit": "MINUTES" } },
+  "inputs": [{
+    "search": {
+      "indices": ["siem-web-access-*"],
+      "query": {
+        "size": 0,
+        "query": { "bool": { "filter": [
+          { "range": { "@timestamp": { "gte": "{{period_end}}||-5m", "lte": "{{period_end}}", "format": "epoch_millis" } } },
+          { "range": { "http_status": { "gte": 400, "lt": 500 } } }
+        ] } },
+        "aggs": {
+          "by_source": {
+            "composite": { "size": 50, "sources": [ { "source_ip": { "terms": { "field": "source_ip" } } } ] }
+          }
+        }
+      }
+    }
+  }],
+  "triggers": [{
+    "bucket_level_trigger": {
+      "name": "4xx 10회 이상",
+      "severity": "3",
+      "condition": {
+        "buckets_path": { "_count": "_count" },
+        "parent_bucket_path": "by_source",
+        "script": { "source": "params._count >= 10", "lang": "painless" },
+        "gap_policy": "skip"
+      },
+      "actions": []
+    }
+  }]
+}

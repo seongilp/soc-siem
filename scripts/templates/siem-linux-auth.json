@@ -1,0 +1,22 @@
+{
+  "index_patterns": ["siem-linux-auth-*"],
+  "priority": 200,
+  "template": {
+    "settings": { "number_of_shards": 1, "number_of_replicas": 0 },
+    "mappings": {
+      "properties": {
+        "@timestamp":    { "type": "date" },
+        "event_dataset": { "type": "keyword" },
+        "event_action":  { "type": "keyword" },
+        "auth_method":   { "type": "keyword" },
+        "host":          { "type": "keyword" },
+        "process":       { "type": "keyword" },
+        "pid":           { "type": "keyword" },
+        "user_name":     { "type": "keyword" },
+        "source_ip":     { "type": "ip" },
+        "source_port":   { "type": "integer" },
+        "message":       { "type": "text" }
+      }
+    }
+  }
+}

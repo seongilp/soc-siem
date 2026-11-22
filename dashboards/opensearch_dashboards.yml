@@ -1,0 +1,13 @@
+server.host: '0.0.0.0'
+
+opensearch.hosts: [https://opensearch:9200]
+opensearch.ssl.verificationMode: none
+opensearch.username: kibanaserver
+opensearch.password: kibanaserver
+opensearch.requestHeadersWhitelist: [authorization, securitytenant]
+
+# 랩은 테넌트를 나누지 않는다. 켜 두면 API로 넣은 saved objects가 admin의 Private 테넌트로
+# 들어가서, UI에서 Global 테넌트를 고른 사용자에게 인덱스 패턴/대시보드가 보이지 않는다.
+opensearch_security.multitenancy.enabled: false
+opensearch_security.readonly_mode.roles: [kibana_read_only]
+opensearch_security.cookie.secure: false

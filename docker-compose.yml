@@ -1,0 +1,111 @@
+name: soc-siem
+
+services:
+  # OpenSearch가 요구하는 vm.max_map_count를 엔진 VM에 설정한다 (Kiri 기본값 65530).
+  sysctl-init:
+    image: alpine:3.20
+    privileged: true
+    command: ["sysctl", "-w", "vm.max_map_count=262144"]
+    restart: "no"
+
+  opensearch:
+    image: opensearchproject/opensearch:${OPENSEARCH_VERSION}
+    depends_on:
+      sysctl-init:
+        condition: service_completed_successfully
+    environment:
+      discovery.type: single-node
+      cluster.name: soc-siem-lab
+      node.name: opensearch
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${OPENSEARCH_INITIAL_ADMIN_PASSWORD}
+      OPENSEARCH_JAVA_OPTS: -Xms${OPENSEARCH_HEAP} -Xmx${OPENSEARCH_HEAP}
+    ulimits:
+      nofile: { soft: 65536, hard: 65536 }
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    ports:
+      - "127.0.0.1:9200:9200"
+    networks: [siem]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sk -u admin:$$OPENSEARCH_INITIAL_ADMIN_PASSWORD https://localhost:9200/_cluster/health | grep -Eq '\"status\":\"(green|yellow)\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  dashboards:
+    image: opensearchproject/opensearch-dashboards:${OPENSEARCH_VERSION}
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    volumes:
+      - ./dashboards/opensearch_dashboards.yml:/usr/share/opensearch-dashboards/config/opensearch_dashboards.yml:ro
+    ports:
+      - "127.0.0.1:5601:5601"
+    networks: [siem]
+
+  # 인덱스 템플릿/탐지 모니터를 로그 수집 전에 넣는다 (멱등).
+  opensearch-init:
+    image: curlimages/curl:8.11.1
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    environment:
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${OPENSEARCH_INITIAL_ADMIN_PASSWORD}
+    entrypoint: ["/bin/sh", "/scripts/bootstrap.sh"]
+    command: ["opensearch"]
+    volumes:
+      - ./scripts:/scripts:ro
+    networks: [siem]
+    restart: "no"
+
+  dashboards-init:
+    image: curlimages/curl:8.11.1
+    depends_on: [dashboards]
+    environment:
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${OPENSEARCH_INITIAL_ADMIN_PASSWORD}
+    entrypoint: ["/bin/sh", "/scripts/bootstrap.sh"]
+    command: ["dashboards"]
+    volumes:
+      - ./scripts:/scripts:ro
+    networks: [siem]
+    restart: "no"
+
+  fluent-bit:
+    image: fluent/fluent-bit:${FLUENT_BIT_VERSION}
+    depends_on:
+      opensearch-init:
+        condition: service_completed_successfully
+    environment:
+      OS_USER: admin
+      OS_PASSWORD: ${OPENSEARCH_INITIAL_ADMIN_PASSWORD}
+    command: ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/lab/fluent-bit.conf"]
+    volumes:
+      - ./fluent-bit:/fluent-bit/etc/lab:ro
+      - target-logs:/logs:ro
+      - fluent-bit-state:/state
+    networks: [siem]
+
+  # 로그 소스: sshd + nginx가 도는 "피해자" 호스트
+  target:
+    build: ./target
+    hostname: target
+    volumes:
+      - target-logs:/var/log/lab
+    networks: [siem]
+
+  # 공격 시뮬레이터 (요청 시에만 실행): docker compose run --rm attacker <scenario>
+  attacker:
+    build: ./attacker
+    hostname: attacker
+    profiles: [attack]
+    depends_on: [target]
+    networks: [siem]
+
+networks:
+  siem:
+
+volumes:
+  opensearch-data:
+  target-logs:
+  fluent-bit-state:

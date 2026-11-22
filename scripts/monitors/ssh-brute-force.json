@@ -1,0 +1,37 @@
+{
+  "type": "monitor",
+  "name": "SSH brute force (source_ip별 실패 5회 이상/5분)",
+  "monitor_type": "bucket_level_monitor",
+  "enabled": true,
+  "schedule": { "period": { "interval": 1, "unit": "MINUTES" } },
+  "inputs": [{
+    "search": {
+      "indices": ["siem-linux-auth-*"],
+      "query": {
+        "size": 0,
+        "query": { "bool": { "filter": [
+          { "range": { "@timestamp": { "gte": "{{period_end}}||-5m", "lte": "{{period_end}}", "format": "epoch_millis" } } },
+          { "term": { "event_action": "Failed" } }
+        ] } },
+        "aggs": {
+          "by_source": {
+            "composite": { "size": 50, "sources": [ { "source_ip": { "terms": { "field": "source_ip" } } } ] }
+          }
+        }
+      }
+    }
+  }],
+  "triggers": [{
+    "bucket_level_trigger": {
+      "name": "실패 5회 이상",
+      "severity": "2",
+      "condition": {
+        "buckets_path": { "_count": "_count" },
+        "parent_bucket_path": "by_source",
+        "script": { "source": "params._count >= 5", "lang": "painless" },
+        "gap_policy": "skip"
+      },
+      "actions": []
+    }
+  }]
+}
